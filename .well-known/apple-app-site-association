@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "59TLHZ68BW.app.serpwidgets.diary",
+        "paths": ["/app/receive", "/app/receive/", "/invite", "/invite/"]
+      }
+    ]
+  }
+}
