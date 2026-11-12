@@ -1,0 +1,21 @@
+<vector
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="20"
+    android:viewportHeight="20">
+  <!-- Outlined, on a 20-unit viewport, because that is the Snake Measurer landing's theme button,
+       to the digit: landing/index.html, ICON_SUN / ICON_MOON. The box stays 24dp and the viewport
+       does the scaling, so the paths need no arithmetic and the stroke keeps the landing's
+       proportion (1.8 of 20). It replaces a FILLED Material icon — filled against outlined was the
+       real difference between the two products, far more visible than any coordinate.
+       Tinting is unaffected: both call sites draw these with Image(colorFilter = tint), which
+       recolours the stroke and leaves the transparent fill alone. -->
+  <path
+      android:pathData="M16.5,11.8 A7,7 0 0 1 8.2,3.5 a7,7 0 1 0 8.3,8.3 z"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"/>
+</vector>

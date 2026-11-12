@@ -1,0 +1,30 @@
+<vector
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="20"
+    android:viewportHeight="20">
+  <!-- Outlined, on a 20-unit viewport, because that is the Snake Measurer landing's theme button,
+       to the digit: landing/index.html, ICON_SUN / ICON_MOON. The box stays 24dp and the viewport
+       does the scaling, so the paths need no arithmetic and the stroke keeps the landing's
+       proportion (1.8 of 20). It replaces a FILLED Material icon — filled against outlined was the
+       real difference between the two products, far more visible than any coordinate.
+       Tinting is unaffected: both call sites draw these with Image(colorFilter = tint), which
+       recolours the stroke and leaves the transparent fill alone. -->
+  <!-- The disc. A vector drawable has no <circle>, so it is two half-arcs. -->
+  <path
+      android:pathData="M10,6.4a3.6,3.6 0 1,0 0,7.2a3.6,3.6 0 1,0 0,-7.2z"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"/>
+  <!-- Eight separate rays, reaching the edges of the grid. -->
+  <path
+      android:pathData="M10,2 v2 M10,16 v2 M2,10 h2 M16,10 h2 M4.5,4.5 l1.4,1.4 M14.1,14.1 l1.4,1.4 M15.5,4.5 l-1.4,1.4 M5.9,14.1 l-1.4,1.4"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"/>
+</vector>
