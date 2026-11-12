@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Snake Measurer - Measure Snake Length from Photos</title>
+
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Measure snake length accurately from photos using reference objects. Free, easy-to-use tool for reptile enthusiasts, breeders, and researchers.">
+    <meta name="keywords" content="snake measurer, snake length, reptile measurement, snake size, pet snake, ball python, boa constrictor">
+    <meta name="author" content="SerpWidgets">
+    <meta name="robots" content="index, follow">
+
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#007AFF" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0A84FF" media="(prefers-color-scheme: dark)">
+    <meta name="color-scheme" content="light dark">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://snakemeasurer.com/">
+    <meta property="og:title" content="Snake Measurer - Measure Snake Length from Photos">
+    <meta property="og:description" content="Measure snake length accurately from photos using reference objects. Free tool for reptile enthusiasts.">
+    <meta property="og:image" content="https://snakemeasurer.com/og-image.png">
+    <meta property="og:site_name" content="Snake Measurer">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://snakemeasurer.com/">
+    <meta name="twitter:title" content="Snake Measurer - Measure Snake Length from Photos">
+    <meta name="twitter:description" content="Measure snake length accurately from photos using reference objects. Free tool for reptile enthusiasts.">
+    <meta name="twitter:image" content="https://snakemeasurer.com/og-image.png">
+
+    <!-- Favicon & Icons -->
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- iOS PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Snake Measurer">
+    <meta name="apple-itunes-app" content="app-id=000000000">
+
+    <!-- Telegram Web App SDK (no-op outside Telegram, ~20KB) -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- RevenueCat Web Billing: deliberately NOT loaded.
+         The tag here pointed at @revenuecat/purchases-js@latest/dist/purchases-js.min.js. That file
+         has never existed in any published version of the package — even 0.15.0 ships only
+         Purchases.umd.js and Purchases.es.js — so the SDK 404'd from day one and web billing has
+         never worked. Nothing depended on it: entitlements on the web come from our own server
+         (/api/sync/subscription/refresh), and mobile uses the native purchases-kmp SDK, which also
+         caches offline. The only trace was a 404 per page load and "RevenueCat SDK not loaded" in
+         the console.
+
+         The window.rc* glue below and PurchaseService for web are kept on purpose: every path is
+         guarded by `if (!window._rcInstance)`, so they fail closed, and they are the starting point
+         if web billing is ever wanted (it is also the only way the web could hold entitlements
+         offline, independently of our server).
+
+         To enable, three things — a working URL alone would make things WORSE:
+           1. pin a version and use the UMD build:
+              https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.66.0/dist/Purchases.umd.js
+              (it defines globalThis.Purchases, so `Purchases.Purchases.configure(...)` still fits)
+           2. port the glue to the current API: logIn/logOut are gone (changeUser replaces them) and
+              restorePurchases does not exist at all. rcLogIn runs on every sign-in, so loading the
+              SDK without this step would break a flow that works today.
+           3. configure Web Billing on the RevenueCat side, then test a real purchase. -->
+
+    <!-- TON Connect UI (crypto payment, web only) -->
+    <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
+    <script>
+        window._initTonConnect = function () {
+            try {
+                if (window.tonConnectUI || typeof TON_CONNECT_UI === 'undefined') return;
+                window.tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+                    manifestUrl: location.origin + '/tonconnect-manifest.json'
+                });
+            } catch (e) { console.warn('TON Connect init failed', e); }
+        };
+        // Fire-and-forget: opens the wallet to send `amountNano` to `address`. The server poller
+        // confirms the on-chain transfer by exact amount, so no result handling is needed here.
+        window.tonConnectPay = function (address, amountNano) {
+            try {
+                window._initTonConnect();
+                if (!window.tonConnectUI) return;
+                window.tonConnectUI.sendTransaction({
+                    validUntil: Math.floor(Date.now() / 1000) + 600,
+                    messages: [{ address: address, amount: String(amountNano) }]
+                });
+            } catch (e) { console.warn('tonConnectPay failed', e); }
+        };
+        if (document.readyState !== 'loading') window._initTonConnect();
+        else window.addEventListener('DOMContentLoaded', window._initTonConnect);
+    </script>
+
+    <!-- Telegram Login Widget host: "Continue with Telegram" (web sign-in). Called from Kotlin
+         (TelegramAuthProvider.web.kt) with the bot username the server reports; the widget is
+         official Telegram JS, so this is just a themed overlay around it. See cb contract below. -->
+    <script>
+        window.telegramLogin = function (botUsername, title, cancelLabel, appLink, appLabel, cb) {
+            // cb contract: JSON payload | '' (user closed) | '!busy' (an overlay is already open) |
+            // '!load' (widget script failed to load). Exactly one call.
+            if (document.getElementById('tg-login-backdrop')) { try { cb('!busy'); } catch (e) {} return; }
+            var done = false;
+            var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var backdrop = document.createElement('div');
+            backdrop.id = 'tg-login-backdrop';
+            backdrop.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;';
+            var card = document.createElement('div');
+            card.style.cssText = 'background:' + (dark ? '#1c1c1e' : '#ffffff') + ';color:' + (dark ? '#fff' : '#000') +
+                ';border-radius:16px;padding:24px 20px;width:min(92vw,360px);box-sizing:border-box;text-align:center;' +
+                'font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+            var heading = document.createElement('div');
+            heading.textContent = title || 'Sign in';
+            heading.style.cssText = 'font-size:18px;font-weight:600;margin-bottom:16px;';
+            var host = document.createElement('div');
+            host.style.cssText = 'display:flex;justify-content:center;min-height:48px;';
+            // Real <a>, not window.open: the app link is only known after a round trip for the
+            // nonce, by which point the browser no longer treats the open as user-initiated and
+            // blocks it (Safari especially). A link the user clicks is never blocked — and it is
+            // the only path that survives in-app browsers, where the widget's popup is crippled.
+            var appAnchor = null;
+            if (appLink) {
+                appAnchor = document.createElement('a');
+                appAnchor.href = appLink;
+                appAnchor.target = '_blank';
+                appAnchor.rel = 'noopener';
+                appAnchor.textContent = appLabel || 'Open in Telegram';
+                appAnchor.style.cssText = 'display:block;margin-top:14px;color:#2ea6ff;font-size:14px;text-decoration:none;';
+            }
+            var cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.textContent = cancelLabel || 'Cancel';
+            cancel.style.cssText = 'margin-top:16px;background:none;border:0;color:#8e8e93;font-size:15px;cursor:pointer;';
+            card.appendChild(heading); card.appendChild(host);
+            if (appAnchor) card.appendChild(appAnchor);
+            card.appendChild(cancel);
+            backdrop.appendChild(card);
+            function onKey(e) { if (e.key === 'Escape') finish(''); }
+            function cleanup() {
+                document.removeEventListener('keydown', onKey);
+                if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+                window.__tgOnAuth = null;
+            }
+            function finish(json) {
+                if (done) return; done = true; cleanup();
+                try { cb(json || ''); } catch (e) { console.warn('telegramLogin callback failed', e); }
+            }
+            document.addEventListener('keydown', onKey);
+            backdrop.addEventListener('click', function (e) { if (e.target === backdrop) finish(''); });
+            cancel.addEventListener('click', function () { finish(''); });
+            window.__tgOnAuth = function (user) { finish(JSON.stringify(user)); };
+            // The bot path finishes outside this overlay (the app polls the server), so Kotlin needs
+            // a way to take the dialog down without pretending the user cancelled.
+            window.telegramLoginClose = function () { if (!done) { done = true; cleanup(); } };
+            // documentElement, NOT body: Compose attaches a shadow root to <body> (Skiko's canvas
+            // lives inside it), and a shadow host stops rendering its light-DOM children. Appended
+            // to body this overlay existed, blocked every later open as "busy", and was invisible.
+            document.documentElement.appendChild(backdrop);
+            // telegram-widget.js replaces its own <script> tag with the login iframe, so it must be
+            // inserted where the button should render.
+            var s = document.createElement('script');
+            s.async = true;
+            s.src = 'https://telegram.org/js/telegram-widget.js?22';
+            s.setAttribute('data-telegram-login', botUsername);
+            s.setAttribute('data-size', 'large');
+            s.setAttribute('data-radius', '10');
+            s.setAttribute('data-request-access', 'write');
+            s.setAttribute('data-onauth', '__tgOnAuth(user)');
+            s.onerror = function () { finish('!load'); };
+            host.appendChild(s);
+        };
+    </script>
+
+    <!-- GlitchTip Error Tracking (self-hosted, Sentry-compatible SDK, production only) -->
+    <script>
+        (function() {
+            if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
+            var s = document.createElement('script');
+            s.src = 'https://browser.sentry-cdn.com/9.20.0/bundle.tracing.min.js';
+            s.crossOrigin = 'anonymous';
+            s.onload = function() {
+                Sentry.init({
+                    dsn: 'https://84b2ee3889aa48a793d80b555a37b11b@api.serpwidgets.app/glitchtip/2',
+                    environment: location.hostname === 'snakemeasurer.com' ? 'production' : 'staging',
+                    release: 'snake-measurer-web@0.10.0',
+                    tracesSampleRate: 0.2,
+                    ignoreErrors: [
+                        'ResizeObserver loop',
+                        'Non-Error promise rejection',
+                        'Load failed'
+                    ]
+                });
+            };
+            document.head.appendChild(s);
+        })();
+    </script>
+
+    <!-- Styles -->
+    <link type="text/css" rel="stylesheet" href="styles.css">
+
+    <!-- Structured Data (JSON-LD) for SEO -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Snake Measurer",
+        "description": "Measure snake length accurately from photos using reference objects. Free, easy-to-use tool for reptile enthusiasts, breeders, and researchers.",
+        "url": "https://snakemeasurer.com/",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Any",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "ratingCount": "150"
+        },
+        "author": {
+            "@type": "Organization",
+            "name": "SerpWidgets",
+            "url": "https://serpwidgets.app"
+        },
+        "browserRequirements": "Requires JavaScript. Works best in Chrome, Firefox, Safari, Edge.",
+        "softwareVersion": "1.0.0",
+        "screenshot": "https://snakemeasurer.com/og-image.png",
+        "downloadUrl": [
+            "https://apps.apple.com/app/snake-measurer/id6760619393",
+            "https://play.google.com/store/apps/details?id=app.serpwidgets.snakemeasurer"
+        ]
+    }
+    </script>
+
+    <!-- FAQ Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "How does Snake Measurer work?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Upload a photo of your snake with a reference object (like a ruler or credit card). Mark the reference object and enter its size, then trace along your snake's body. The app calculates the real length based on the reference scale."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "What can I use as a reference object?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Any object with a known size works: a ruler, credit card (85.6mm), coin, or any item you can measure. Place it next to your snake in the photo for accurate measurements."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "How accurate is the measurement?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Accuracy depends on photo quality, reference object placement, and how carefully you trace the snake. For best results, take a top-down photo with the snake fully stretched."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Is Snake Measurer free?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes! Snake Measurer is free to use with basic features. Premium features are available for advanced users who need unlimited measurements and cloud storage."
+                }
+            }
+        ]
+    }
+    </script>
+
+    <script>
+        // Detect Telegram Web App environment
+        window._isTelegram = !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
+
+        // Determine theme before rendering loader
+        (function() {
+            var tg = window._isTelegram ? window.Telegram.WebApp : null;
+            var isDark;
+
+            if (tg) {
+                // Use Telegram's theme
+                isDark = tg.colorScheme === 'dark';
+                // Save so Kotlin picks it up
+                localStorage.setItem('snake_measurer_theme', isDark ? 'DARK' : 'LIGHT');
+            } else {
+                var savedTheme = localStorage.getItem('snake_measurer_theme');
+                isDark = savedTheme === 'DARK' ||
+                    (savedTheme !== 'LIGHT' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            }
+
+            if (isDark) {
+                document.documentElement.classList.add('theme-dark');
+            }
+        })();
+    </script>
+    <style>
+        #loader {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #f8f8fa;
+            z-index: 9999;
+            transition: opacity 0.4s ease;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .theme-dark #loader { background: #1c1c1e; }
+        .theme-dark #loader .loader-title { color: #f2f2f7; }
+        .theme-dark #loader .loader-subtitle { color: #98989f; }
+        .theme-dark #loader .loader-bar-bg { background: #2c2c2e; }
+        .theme-dark #loader .loader-bar-fill { background: linear-gradient(90deg, #0A84FF, #BF5AF2); }
+        .loader-icon {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 24px;
+        }
+        .loader-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1c1c1e;
+            margin: 0 0 6px;
+        }
+        .loader-subtitle {
+            font-size: 14px;
+            color: #8e8e93;
+            margin: 0 0 28px;
+        }
+        .loader-bar-bg {
+            width: 200px;
+            height: 4px;
+            border-radius: 2px;
+            background: #e5e5ea;
+            overflow: hidden;
+        }
+        .loader-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, #007AFF, #AF52DE);
+            animation: loader-progress 2.5s ease-in-out infinite;
+        }
+        @keyframes loader-progress {
+            0%   { width: 0%; transform: translateX(0); }
+            50%  { width: 70%; }
+            100% { width: 100%; }
+        }
+        #loader.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+<meta name="robots" content="noindex"><script>console.info('PREVIEW test — сборка cb05dd9f049650b4b52644a203c722a32f23a8b4');</script></head>
+<body style="background: #f8f8fa;">
+<script>
+    // Match body background to loader theme
+    if (document.documentElement.classList.contains('theme-dark')) {
+        document.body.style.background = '#1c1c1e';
+    }
+</script>
+
+<!-- Unsupported browser fallback (no WASM / in-app WebView) -->
+<script>
+(function() {
+    var supported = typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function';
+    if (supported) return;
+
+    // Detect platform for store links
+    var ua = navigator.userAgent || '';
+    var isAndroid = /android/i.test(ua);
+    var isIOS = /iphone|ipad|ipod/i.test(ua);
+    var isDark = document.documentElement.classList.contains('theme-dark');
+
+    var playStoreUrl = 'https://play.google.com/store/apps/details?id=app.serpwidgets.snakemeasurer';
+    var appStoreUrl = 'https://apps.apple.com/app/snake-measurer/id6760619393';
+
+    // Try to open in system browser (works in Telegram, some other in-app browsers)
+    var currentUrl = window.location.href;
+    var openInBrowserUrl = isAndroid
+        ? 'intent://' + currentUrl.replace(/^https?:\/\//, '') + '#Intent;scheme=https;end'
+        : currentUrl;
+
+    var bg = isDark ? '#1c1c1e' : '#f8f8fa';
+    var textColor = isDark ? '#f2f2f7' : '#1c1c1e';
+    var subtitleColor = isDark ? '#98989f' : '#8e8e93';
+    var btnBg = '#AF52DE';
+    var btnSecondaryBg = isDark ? '#2c2c2e' : '#e5e5ea';
+    var btnSecondaryColor = isDark ? '#f2f2f7' : '#1c1c1e';
+
+    var storeButton = '';
+    var qrSection = '';
+    if (isAndroid) {
+        storeButton = '<a href="' + playStoreUrl + '" style="display:block;width:100%;max-width:280px;padding:14px 20px;background:' + btnBg + ';color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;text-align:center;box-sizing:border-box;">Download from Google Play</a>';
+    } else if (isIOS) {
+        storeButton = '<a href="' + appStoreUrl + '" style="display:block;width:100%;max-width:280px;padding:14px 20px;background:' + btnBg + ';color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;text-align:center;box-sizing:border-box;">Download from App Store</a>';
+    } else {
+        // Desktop — show QR codes for both stores
+        qrSection =
+            '<div style="display:flex;gap:24px;justify-content:center;margin-top:8px;">' +
+                '<div style="text-align:center;">' +
+                    '<a href="' + appStoreUrl + '" target="_blank" rel="noopener"><img src="qr-appstore.png" alt="App Store QR" style="width:140px;height:140px;border-radius:12px;" /></a>' +
+                    '<p style="font-size:12px;color:' + subtitleColor + ';margin:8px 0 0;">App Store</p>' +
+                '</div>' +
+                '<div style="text-align:center;">' +
+                    '<a href="' + playStoreUrl + '" target="_blank" rel="noopener"><img src="qr-googleplay.png" alt="Google Play QR" style="width:140px;height:140px;border-radius:12px;" /></a>' +
+                    '<p style="font-size:12px;color:' + subtitleColor + ';margin:8px 0 0;">Google Play</p>' +
+                '</div>' +
+            '</div>';
+    }
+
+    var openBrowserButton = '<a href="' + openInBrowserUrl + '" style="display:block;width:100%;max-width:280px;padding:14px 20px;background:' + btnSecondaryBg + ';color:' + btnSecondaryColor + ';border:none;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;text-align:center;box-sizing:border-box;">'
+        + (isAndroid ? 'Open in Chrome' : isIOS ? 'Open in Safari' : 'Open in Browser')
+        + '</a>';
+
+    document.body.style.background = bg;
+    document.body.innerHTML =
+        '<div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;text-align:center;">' +
+            '<img src="icon-192.png" alt="Snake Measurer" style="width:80px;height:80px;margin-bottom:24px;" />' +
+            '<p style="font-size:22px;font-weight:700;color:' + textColor + ';margin:0 0 8px;">Snake Measurer</p>' +
+            '<p style="font-size:14px;color:' + subtitleColor + ';margin:0 0 32px;max-width:300px;line-height:1.5;">This browser doesn\'t support the app. Please open in a regular browser or download the app.</p>' +
+            '<div style="display:flex;flex-direction:column;gap:12px;align-items:center;width:100%;">' +
+                storeButton +
+                openBrowserButton +
+            '</div>' +
+            qrSection +
+        '</div>';
+})();
+</script>
+
+<!-- Loading screen -->
+<div id="loader">
+    <!-- Snake icon -->
+    <img class="loader-icon" src="icon-192.png" alt="Snake Measurer" />
+    <p class="loader-title">Snake Measurer</p>
+    <p class="loader-subtitle">Loading app...</p>
+    <div class="loader-bar-bg">
+        <div class="loader-bar-fill"></div>
+    </div>
+</div>
+
+<!-- Native login form created dynamically to avoid Compose DOM interference -->
+<script>
+(function() {
+    var overlay, form, emailInput, passwordInput, titleEl, submitBtn, toggleLink, forgotLink, closeBtn, errorDiv;
+    var isCreate = false;
+    var isForgot = false;
+    var built = false;
+
+    function buildForm() {
+        if (built) return;
+        built = true;
+
+        overlay = document.createElement('div');
+        overlay.id = 'nativeLoginOverlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;width:' + window.innerWidth + 'px;height:' + window.innerHeight + 'px;background:rgba(0,0,0,0.5);z-index:2147483647;display:none;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;';
+
+        overlay.innerHTML =
+            '<form id="nativeLoginForm" autocomplete="on" style="border-radius:16px;padding:24px;width:90%;max-width:400px;box-sizing:border-box;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+                    '<h2 id="nativeLoginTitle" style="margin:0;font-size:18px;">Sign In</h2>' +
+                    '<button type="button" id="nativeLoginClose" style="background:none;border:none;font-size:22px;cursor:pointer;color:#8e8e93;padding:4px 8px;">&times;</button>' +
+                '</div>' +
+                '<div id="nativeLoginError" style="display:none;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px;text-align:center;"></div>' +
+                '<input id="nativeLoginEmail" type="email" name="email" autocomplete="username" placeholder="Email" required ' +
+                    'style="display:block;width:100%;padding:12px;margin-bottom:12px;border-radius:12px;font-size:16px;box-sizing:border-box;outline:none;">' +
+                '<input id="nativeLoginPassword" type="password" name="password" autocomplete="current-password" placeholder="Password" required ' +
+                    'style="display:block;width:100%;padding:12px;margin-bottom:16px;border-radius:12px;font-size:16px;box-sizing:border-box;outline:none;">' +
+                '<button type="submit" id="nativeLoginSubmit" style="display:block;width:100%;padding:14px;background:#AF52DE;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;">Sign In</button>' +
+                '<div style="display:flex;justify-content:space-between;margin-top:12px;">' +
+                    '<a href="#" id="nativeLoginToggle" style="font-size:13px;color:#AF52DE;text-decoration:none;">No account? Create one</a>' +
+                    '<a href="#" id="nativeLoginForgot" style="font-size:13px;color:#8e8e93;text-decoration:none;">Forgot password?</a>' +
+                '</div>' +
+            '</form>';
+
+        document.documentElement.appendChild(overlay);
+
+        form = overlay.querySelector('#nativeLoginForm');
+        emailInput = overlay.querySelector('#nativeLoginEmail');
+        passwordInput = overlay.querySelector('#nativeLoginPassword');
+        titleEl = overlay.querySelector('#nativeLoginTitle');
+        submitBtn = overlay.querySelector('#nativeLoginSubmit');
+        toggleLink = overlay.querySelector('#nativeLoginToggle');
+        forgotLink = overlay.querySelector('#nativeLoginForgot');
+        closeBtn = overlay.querySelector('#nativeLoginClose');
+        errorDiv = overlay.querySelector('#nativeLoginError');
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var email = emailInput.value;
+            if (isForgot) {
+                if (email && window._nativeLoginOnForgotPassword) {
+                    window._nativeLoginOnForgotPassword(email);
+                    errorDiv.style.color = '#34C759';
+                    errorDiv.style.background = 'transparent';
+                    errorDiv.textContent = 'If an account exists for ' + email + ', a reset link has been sent. Check your inbox and spam folder.';
+                    errorDiv.style.display = 'block';
+                    setTimeout(function() { setForgotMode(false); }, 3000);
+                }
+                return;
+            }
+            var password = passwordInput.value;
+            if (email && password) {
+                if (isCreate && window._nativeLoginOnCreateAccount) {
+                    window._nativeLoginOnCreateAccount(email, password);
+                } else if (window._nativeLoginOnSubmit) {
+                    window._nativeLoginOnSubmit(email, password);
+                }
+            }
+        });
+
+        toggleLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            errorDiv.style.display = 'none';
+            if (isForgot) {
+                setForgotMode(false);
+            } else {
+                updateMode(!isCreate);
+            }
+        });
+
+        forgotLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            setForgotMode(true);
+        });
+
+        closeBtn.addEventListener('click', function() {
+            window.hideNativeLoginForm();
+            if (window._nativeLoginOnDismiss) window._nativeLoginOnDismiss();
+        });
+
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) {
+                window.hideNativeLoginForm();
+                if (window._nativeLoginOnDismiss) window._nativeLoginOnDismiss();
+            }
+        });
+    }
+
+    function setForgotMode(forgot) {
+        isForgot = forgot;
+        errorDiv.style.display = 'none';
+        if (forgot) {
+            titleEl.textContent = 'Reset Password';
+            submitBtn.textContent = 'Send Reset Link';
+            passwordInput.style.display = 'none';
+            passwordInput.removeAttribute('required');
+            forgotLink.style.display = 'none';
+            toggleLink.textContent = 'Back to Sign In';
+        } else {
+            passwordInput.style.display = 'block';
+            passwordInput.setAttribute('required', '');
+            updateMode(isCreate);
+        }
+    }
+
+    function updateMode(createMode) {
+        isCreate = createMode;
+        isForgot = false;
+        titleEl.textContent = isCreate ? 'Create Account' : 'Sign In';
+        submitBtn.textContent = isCreate ? 'Create Account' : 'Sign In';
+        passwordInput.style.display = 'block';
+        passwordInput.setAttribute('required', '');
+        passwordInput.autocomplete = isCreate ? 'new-password' : 'current-password';
+        toggleLink.textContent = isCreate ? 'Already have an account? Sign in' : 'No account? Create one';
+        forgotLink.style.display = isCreate ? 'none' : '';
+    }
+
+    function applyTheme(isDark) {
+        // Colors matching AppTheme.kt
+        var bg = isDark ? '#2c2c2e' : '#fff';
+        var textColor = isDark ? '#fff' : '#000';
+        var inputBg = isDark ? '#1c1c1e' : '#fff';
+        var inputColor = isDark ? '#fff' : '#000';
+        var inputBorder = isDark ? '#48484a' : '#d1d1d6';
+        var errBg = isDark ? '#3a1c1c' : '#ffe0e0';
+        var errColor = isDark ? '#ff6b6b' : '#c00';
+        var snake = isDark ? '#BF5AF2' : '#AF52DE';
+
+        form.style.background = bg;
+        titleEl.style.color = textColor;
+        emailInput.style.background = inputBg;
+        emailInput.style.color = inputColor;
+        emailInput.style.border = '1px solid ' + inputBorder;
+        passwordInput.style.background = inputBg;
+        passwordInput.style.color = inputColor;
+        passwordInput.style.border = '1px solid ' + inputBorder;
+        errorDiv.style.background = errBg;
+        errorDiv.style.color = errColor;
+        submitBtn.style.background = snake;
+        toggleLink.style.color = snake;
+    }
+
+    function setCanvasPointerEvents(enabled) {
+        var canvas = document.querySelector('canvas');
+        if (canvas) canvas.style.pointerEvents = enabled ? 'auto' : 'none';
+    }
+
+    window.showNativeLoginForm = function(mode, isDark) {
+        buildForm();
+        applyTheme(isDark);
+        updateMode(mode === 'create');
+        emailInput.value = '';
+        passwordInput.value = '';
+        errorDiv.style.display = 'none';
+        overlay.style.display = 'flex';
+        setCanvasPointerEvents(false);
+
+        setTimeout(function() { emailInput.focus(); }, 50);
+    };
+
+    window.hideNativeLoginForm = function() {
+        if (overlay) overlay.style.display = 'none';
+        setCanvasPointerEvents(true);
+    };
+
+    window.showNativeLoginError = function(msg) {
+        if (errorDiv) {
+            errorDiv.textContent = msg;
+            errorDiv.style.display = msg ? 'block' : 'none';
+        }
+    };
+
+    window.hideNativeLoginError = function() {
+        if (errorDiv) errorDiv.style.display = 'none';
+    };
+})();
+</script>
+
+<script>
+    // Boot watchdog. The wasm is ~7 MB (~2 MB gzipped): on a slow connection the first load
+    // takes well over 30s, and the old "hide loader after 30s regardless" fallback left a
+    // silently blank page while the download was still in flight. Rules now:
+    //  - the loader NEVER hides silently — only Kotlin's onAppReady hides it;
+    //  - at 30s the subtitle switches to a "still loading" reassurance;
+    //  - a fatal wasm error (stale CDN/SW asset mix right after a deploy → 404/compile fail)
+    //    triggers ONE automatic reload per session, which refetches a consistent set;
+    //  - otherwise (or if the retry already happened) the loader becomes an error screen
+    //    with a Reload button and the error text, so failures are visible and reportable.
+    (function() {
+        var RETRY_KEY = 'sm_boot_retried';
+        var loader = document.getElementById('loader');
+        var failed = false;
+
+        window._appReady = false;
+        window._bootError = null;
+
+        function isFatalBootError(msg) {
+            return /webassembly|\.wasm|magic word|instantiat|http status|mime type|chunkloaderror|loading chunk|dynamically imported/i.test(msg || '');
+        }
+
+        function showBootError(msg) {
+            if (window._appReady || failed || !loader.parentNode) return;
+            failed = true;
+            var subtitle = loader.querySelector('.loader-subtitle');
+            var bar = loader.querySelector('.loader-bar-bg');
+            if (bar) bar.style.display = 'none';
+            if (subtitle) subtitle.textContent = 'The app failed to load. Check your connection and try again.';
+            var btn = document.createElement('button');
+            btn.textContent = 'Reload';
+            btn.style.cssText = 'padding:12px 32px;background:#AF52DE;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;';
+            btn.onclick = function() {
+                try { sessionStorage.removeItem(RETRY_KEY); } catch (e) {}
+                location.reload();
+            };
+            loader.appendChild(btn);
+            if (msg) {
+                var err = document.createElement('p');
+                err.textContent = String(msg).slice(0, 200);
+                err.style.cssText = 'font-size:11px;color:#8e8e93;margin:16px 24px 0;max-width:420px;text-align:center;word-break:break-word;';
+                loader.appendChild(err);
+            }
+        }
+
+        window._bootFailed = function(msg) {
+            if (window._appReady) return;
+            var retried = false;
+            try { retried = !!sessionStorage.getItem(RETRY_KEY); } catch (e) {}
+            if (!retried && navigator.onLine !== false) {
+                try { sessionStorage.setItem(RETRY_KEY, '1'); } catch (e) {}
+                location.reload();
+                return;
+            }
+            showBootError(msg);
+        };
+
+        window.addEventListener('error', function(e) {
+            if (window._appReady) return;
+            if (!window._bootError) window._bootError = e.message || 'unknown error';
+            if (isFatalBootError(e.message)) window._bootFailed(e.message);
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            if (window._appReady) return;
+            var r = e.reason;
+            var msg = (r && (r.message || String(r))) || 'unhandled rejection';
+            if (!window._bootError) window._bootError = msg;
+            if (isFatalBootError(msg)) window._bootFailed(msg);
+        });
+
+        // Slow-connection reassurance; then give up visibly (never a blank page). If the
+        // download does finish later, onAppReady still hides the loader over the error UI.
+        setTimeout(function() {
+            if (!window._appReady && !failed) {
+                var subtitle = loader.querySelector('.loader-subtitle');
+                if (subtitle) subtitle.textContent = 'Still loading — slow connection…';
+            }
+        }, 30000);
+        setTimeout(function() {
+            if (!window._appReady) showBootError(window._bootError);
+        }, 180000);
+    })();
+</script>
+<script>
+    // Real download progress. Gradle stamps the main wasm's hashed name + UNCOMPRESSED size
+    // into the placeholders below (dist only — on the dev server they stay unstamped and this
+    // whole block is a no-op, keeping the indeterminate bar). The prefetch counts streamed
+    // bytes for the percent; the browser HTTP cache / service worker dedups the request when
+    // composeApp.js fetches the same URL moments later — nothing downloads twice.
+    (function() {
+        var wasmUrl = '0c7a3ff214d646587a58.wasm';
+        var wasmSize = parseInt('8642989', 10);
+        if (!wasmUrl || wasmUrl.indexOf('%%') !== -1 || !(wasmSize > 0)) return;
+        if (typeof fetch !== 'function' || typeof ReadableStream === 'undefined') return;
+
+        var bar = document.querySelector('#loader .loader-bar-fill');
+        var subtitle = document.querySelector('#loader .loader-subtitle');
+        var baseText = subtitle ? subtitle.textContent : 'Loading app...';
+
+        fetch(wasmUrl).then(function(resp) {
+            if (!resp.ok || !resp.body) return;
+            var reader = resp.body.getReader();
+            var received = 0;
+            if (bar) {
+                bar.style.animation = 'none';
+                bar.style.transition = 'width 0.2s ease';
+                bar.style.width = '0%';
+            }
+            function step() {
+                return reader.read().then(function(r) {
+                    if (window._appReady) { reader.cancel(); return; }
+                    if (r.done) {
+                        if (bar) bar.style.width = '100%';
+                        if (subtitle) subtitle.textContent = 'Starting…';
+                        return;
+                    }
+                    received += r.value.length;
+                    var pct = Math.min(100, Math.round(received / wasmSize * 100));
+                    if (bar) bar.style.width = pct + '%';
+                    if (subtitle) subtitle.textContent = baseText + ' ' + pct + '%';
+                    return step();
+                });
+            }
+            return step();
+        }).catch(function() { /* prefetch failed — loader keeps the indeterminate animation */ });
+    })();
+</script>
+<script type="application/javascript" src="composeApp.js"></script>
+<script>
+    // Hide loader when Compose signals it's ready
+    (function() {
+        var loader = document.getElementById('loader');
+        var hidden = false;
+
+        function hideLoader() {
+            if (hidden) return;
+            hidden = true;
+            loader.classList.add('fade-out');
+            setTimeout(function() { loader.remove(); }, 500);
+        }
+
+        // Called from Kotlin via PlatformInfo.onAppReady()
+        window._hideLoader = function() {
+            window._appReady = true;
+            try { sessionStorage.removeItem('sm_boot_retried'); } catch (e) {}
+            hideLoader();
+
+            // Initialize Telegram Web App after Compose is ready
+            if (window._isTelegram) {
+                var tg = window.Telegram.WebApp;
+
+                // Expand to full screen
+                tg.expand();
+                tg.disableVerticalSwipes();
+
+                // Tell Telegram we're ready
+                tg.ready();
+
+                // Handle back button
+                tg.BackButton.onClick(function() {
+                    // Let Kotlin handle navigation; if no modal open, close the app
+                    if (window._onTelegramBack) {
+                        window._onTelegramBack();
+                    } else {
+                        tg.close();
+                    }
+                });
+
+                // Listen for theme changes
+                tg.onEvent('themeChanged', function() {
+                    var isDark = tg.colorScheme === 'dark';
+                    localStorage.setItem('snake_measurer_theme', isDark ? 'DARK' : 'LIGHT');
+                    // Notify Kotlin to update theme
+                    if (window._onTelegramThemeChanged) {
+                        window._onTelegramThemeChanged(isDark);
+                    }
+                });
+
+                // Expose Telegram user data for Kotlin (read-once, cleared after access)
+                var _tgUser = tg.initDataUnsafe && tg.initDataUnsafe.user || null;
+                var _tgInitData = tg.initData || '';
+                window._getTelegramUser = function() { var u = _tgUser; return u; };
+                window._getTelegramInitData = function() { var d = _tgInitData; _tgInitData = ''; return d; };
+            }
+        };
+
+        // No time-based fallback here: the boot watchdog above owns the slow/failed paths.
+        // Hiding the loader on a timer while the wasm is still downloading left a blank page.
+    })();
+
+    // Register Service Worker (skip in Telegram — not needed)
+    if ('serviceWorker' in navigator && !window._isTelegram) {
+        navigator.serviceWorker.register('sw.js').catch(function(e) {
+            console.warn('SW registration failed:', e);
+        });
+    }
+
+    // Load Firebase AFTER Canvas is ready (non-blocking)
+    function loadFirebase() {
+        var scripts = [
+            'https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js',
+            'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js',
+            'https://www.gstatic.com/firebasejs/10.7.0/firebase-analytics-compat.js'
+        ];
+        var loaded = 0;
+
+        function onAllLoaded() {
+            var firebaseConfig = {
+                apiKey: "AIzaSyARDge4x1EEv5W1jJ15QdO5OW2RLLHNLqc",
+                authDomain: "snakemeasurer.firebaseapp.com",
+                projectId: "snakemeasurer",
+                storageBucket: "snakemeasurer.firebasestorage.app",
+                messagingSenderId: "223904200399",
+                appId: "1:223904200399:web:2e98ea1c1f3f9fa54069ba",
+                measurementId: "G-L6SQPK4C0V"
+            };
+            window.firebaseApp = firebase.initializeApp(firebaseConfig);
+            window.firebaseAnalytics = null;
+            window._firebaseReady = true;
+
+            // Initialize Auth immediately so it's ready for Kotlin
+            window.firebaseAuth = firebase.auth();
+            window.firebaseAuth.onAuthStateChanged(function(user) {
+                window.currentFirebaseUser = user;
+                // Notify Kotlin side about auth state change (session restore after page reload)
+                if (typeof window._onAuthStateChangedKotlin === 'function') {
+                    window._onAuthStateChangedKotlin(user);
+                }
+            });
+            window._firebaseAuthReady = true;
+
+            if (window._firebaseReadyResolve) window._firebaseReadyResolve();
+        }
+
+        // Load scripts sequentially (auth depends on app, analytics depends on app)
+        function loadNext() {
+            if (loaded >= scripts.length) { onAllLoaded(); return; }
+            var s = document.createElement('script');
+            s.src = scripts[loaded];
+            s.onload = function() { loaded++; loadNext(); };
+            s.onerror = function() { loaded++; loadNext(); };
+            document.head.appendChild(s);
+        }
+        loadNext();
+    }
+
+    // Firebase ready promise (Kotlin interop can await this)
+    window._firebaseReady = false;
+    window._firebaseReadyPromise = new Promise(function(resolve) {
+        window._firebaseReadyResolve = resolve;
+    });
+
+    // Firebase helper functions (safe to call before Firebase loads)
+    window.initFirebaseAnalytics = function(enabled) {
+        if (!window._firebaseReady) {
+            window._firebaseReadyPromise.then(function() { window.initFirebaseAnalytics(enabled); });
+            return;
+        }
+        if (enabled && !window.firebaseAnalytics) {
+            window.firebaseAnalytics = firebase.analytics();
+            // Distinguish Telegram Mini App vs regular web traffic
+            firebase.analytics().setUserProperties({
+                app_source: window._isTelegram ? 'telegram' : 'web'
+            });
+        }
+    };
+    window.trackFirebaseEvent = function(eventName, params) {
+        if (window.firebaseAnalytics) window.firebaseAnalytics.logEvent(eventName, params);
+    };
+    window.trackFirebasePageView = function(pagePath) {
+        if (window.firebaseAnalytics) window.firebaseAnalytics.logEvent('page_view', { page_path: pagePath });
+    };
+
+    // Start loading Firebase after a short delay (let app JS download take priority)
+    setTimeout(loadFirebase, 100);
+
+    // --- RevenueCat Web Billing ---
+    window._rcInstance = null;
+    window._rcReady = false;
+    window._rcApiKey = 'YOUR_REVENUECAT_WEB_API_KEY'; // TODO: replace with real web API key
+
+    window.rcConfigure = function(userId) {
+        try {
+            if (typeof Purchases === 'undefined') {
+                console.warn('RevenueCat SDK not loaded');
+                return false;
+            }
+            window._rcInstance = Purchases.Purchases.configure(window._rcApiKey, userId || null);
+            window._rcReady = true;
+            return true;
+        } catch(e) {
+            console.error('RevenueCat configure failed:', e);
+            return false;
+        }
+    };
+
+    window.rcGetCustomerInfo = function() {
+        if (!window._rcInstance) return Promise.reject('RC not configured');
+        return window._rcInstance.getCustomerInfo();
+    };
+
+    window.rcGetOfferings = function() {
+        if (!window._rcInstance) return Promise.reject('RC not configured');
+        return window._rcInstance.getOfferings();
+    };
+
+    window.rcPurchase = function(pkg) {
+        if (!window._rcInstance) return Promise.reject('RC not configured');
+        return window._rcInstance.purchase({ rcPackage: pkg });
+    };
+
+    window.rcRestorePurchases = function() {
+        if (!window._rcInstance) return Promise.reject('RC not configured');
+        return window._rcInstance.restorePurchases();
+    };
+
+    window.rcLogIn = function(userId) {
+        if (!window._rcInstance) return Promise.reject('RC not configured');
+        return window._rcInstance.logIn(userId);
+    };
+
+    window.rcLogOut = function() {
+        if (!window._rcInstance) return Promise.reject('RC not configured');
+        return window._rcInstance.logOut();
+    };
+
+    window.rcCheckEntitlement = function(customerInfo, entitlementId) {
+        try {
+            var ent = customerInfo.entitlements.active[entitlementId];
+            return ent ? true : false;
+        } catch(e) { return false; }
+    };
+
+    window.rcGetProductId = function(customerInfo, entitlementId) {
+        try {
+            var ent = customerInfo.entitlements.active[entitlementId];
+            return ent ? (ent.productIdentifier || '') : '';
+        } catch(e) { return ''; }
+    };
+
+    window.rcGetExpiration = function(customerInfo, entitlementId) {
+        try {
+            var ent = customerInfo.entitlements.active[entitlementId];
+            if (ent && ent.expirationDate) return new Date(ent.expirationDate).getTime();
+            return 0;
+        } catch(e) { return 0; }
+    };
+
+    // CSS keyframes for the loading spinner shown before RC paywall renders.
+    // Inject once on first paywall open (idempotent).
+    window._rcInstallSpinnerStyles = function() {
+        if (document.getElementById('rc-paywall-spinner-styles')) return;
+        var style = document.createElement('style');
+        style.id = 'rc-paywall-spinner-styles';
+        style.textContent =
+            '@keyframes rc-spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }' +
+            '.rc-paywall-spinner { width:48px;height:48px;border:4px solid rgba(255,255,255,0.2);border-top-color:#FFD700;border-radius:50%;animation:rc-spin 0.9s linear infinite; }';
+        document.head.appendChild(style);
+    };
+
+    // Present RC's hosted paywall in a fullscreen overlay. Shows a spinner
+    // while RC paywall content loads. Resolves with
+    // { success: bool, isPremium: bool, productId: string, expirationMs: number, dismissed: bool, error: string }.
+    // Cleans up the DOM container regardless of outcome.
+    window.rcPresentPaywall = function() {
+        return new Promise(function(resolve) {
+            if (!window._rcInstance) { resolve({ success: false, error: 'RC not configured' }); return; }
+            try {
+                window._rcInstallSpinnerStyles();
+
+                // Tear down stale container if any
+                var existing = document.getElementById('rc-paywall-container');
+                if (existing) existing.remove();
+
+                var container = document.createElement('div');
+                container.id = 'rc-paywall-container';
+                container.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;overflow:auto;';
+
+                // Spinner shown while RC paywall content loads. Replaced by RC
+                // when its DOM mounts; if RC fails before mount, we remove it.
+                var spinner = document.createElement('div');
+                spinner.className = 'rc-paywall-spinner';
+                spinner.id = 'rc-paywall-spinner';
+                container.appendChild(spinner);
+
+                // See the Telegram overlay above: body is a shadow host, its light children
+                // never render. Same trap, same fix.
+                document.documentElement.appendChild(container);
+
+                var cleanup = function() {
+                    var c = document.getElementById('rc-paywall-container');
+                    if (c) c.remove();
+                };
+
+                window._rcInstance.presentPaywall({ htmlTarget: container })
+                    .then(function(purchaseResult) {
+                        cleanup();
+                        try {
+                            var ci = purchaseResult.customerInfo;
+                            var isPremium = window.rcCheckEntitlement(ci, 'premium');
+                            var productId = window.rcGetProductId(ci, 'premium');
+                            var expMs = window.rcGetExpiration(ci, 'premium');
+                            resolve({ success: true, isPremium: isPremium, productId: productId, expirationMs: expMs, dismissed: false });
+                        } catch (parseErr) {
+                            resolve({ success: true, isPremium: false, dismissed: false, error: parseErr && parseErr.message });
+                        }
+                    })
+                    .catch(function(err) {
+                        cleanup();
+                        var msg = (err && err.message) || String(err) || 'unknown';
+                        var dismissed = /cancel|close|dismiss|user_cancel/i.test(msg);
+                        resolve({ success: false, dismissed: dismissed, error: msg });
+                    });
+            } catch (e) {
+                var c2 = document.getElementById('rc-paywall-container');
+                if (c2) c2.remove();
+                resolve({ success: false, error: (e && e.message) || 'rcPresentPaywall threw' });
+            }
+        });
+    };
+</script>
+</body>
+</html>

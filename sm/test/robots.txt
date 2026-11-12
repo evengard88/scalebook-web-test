@@ -1,0 +1,14 @@
+# Snake Measurer - robots.txt
+
+User-agent: *
+Allow: /
+
+# Block heavy WASM/JS assets — bots don't need these
+Disallow: /*.wasm
+Disallow: /*.mjs
+
+# Block internal paths
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://snakemeasurer.com/sitemap.xml
